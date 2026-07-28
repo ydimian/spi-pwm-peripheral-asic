@@ -4,7 +4,7 @@
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge
-from cocotb.triggers import FallingEdge
+from cocotb.triggers import Edge
 from cocotb.triggers import ClockCycles
 from cocotb.triggers import Timer
 from cocotb.triggers import First
@@ -105,6 +105,36 @@ async def configure_pwm(dut, duty_cycle, out_mask=0x01, pwm_mask=0x01):
     await send_spi_transaction(dut, 1, 0x04, duty_cycle)
 
 
+async def wait_for_bit_edge(dut, signal, bit, rising, timeout_ns):
+    """Wait for a single bit of a (possibly multi-bit) signal to transition.
+
+    Icarus Verilog's VPI can't register a value-change callback on a bit
+    slice of a vector directly (RisingEdge/FallingEdge on e.g. uo_out[0]
+    raises "cannot callback values on type code=37"). Instead, watch the
+    whole bus for any change and check in Python whether our bit made the
+    transition we're waiting for.
+
+    Returns the sim time (ns) the edge happened, or None on timeout.
+    """
+    mask = 1 << bit
+    prev = 1 if (int(signal.value) & mask) else 0
+    deadline = get_sim_time(units="ns") + timeout_ns
+
+    while True:
+        remaining = deadline - get_sim_time(units="ns")
+        if remaining <= 0:
+            return None
+        trigger = await First(Edge(signal), Timer(remaining, units="ns"))
+        if isinstance(trigger, Timer):
+            return None
+        cur = 1 if (int(signal.value) & mask) else 0
+        if rising and prev == 0 and cur == 1:
+            return get_sim_time(units="ns")
+        if not rising and prev == 1 and cur == 0:
+            return get_sim_time(units="ns")
+        prev = cur
+
+
 async def measure_pwm(dut, bit=0):
     """Measure one period of the PWM signal on uo_out[bit].
 
@@ -112,22 +142,19 @@ async def measure_pwm(dut, bit=0):
     within PWM_TIMEOUT_NS (i.e. it is stuck low/high, as expected at the
     0% / 100% duty cycle extremes).
     """
-    signal = dut.uo_out[bit]
+    signal = dut.uo_out
 
-    trigger = await First(RisingEdge(signal), Timer(PWM_TIMEOUT_NS, units="ns"))
-    if isinstance(trigger, Timer):
+    t_rise1 = await wait_for_bit_edge(dut, signal, bit, True, PWM_TIMEOUT_NS)
+    if t_rise1 is None:
         return None
-    t_rise1 = get_sim_time(units="ns")
 
-    trigger = await First(FallingEdge(signal), Timer(PWM_TIMEOUT_NS, units="ns"))
-    if isinstance(trigger, Timer):
+    t_fall = await wait_for_bit_edge(dut, signal, bit, False, PWM_TIMEOUT_NS)
+    if t_fall is None:
         return None
-    t_fall = get_sim_time(units="ns")
 
-    trigger = await First(RisingEdge(signal), Timer(PWM_TIMEOUT_NS, units="ns"))
-    if isinstance(trigger, Timer):
+    t_rise2 = await wait_for_bit_edge(dut, signal, bit, True, PWM_TIMEOUT_NS)
+    if t_rise2 is None:
         return None
-    t_rise2 = get_sim_time(units="ns")
 
     period_ns = t_rise2 - t_rise1
     high_ns = t_fall - t_rise1
