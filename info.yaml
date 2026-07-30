@@ -5,7 +5,7 @@ project:
   discord:      "Youhanna Dimian (EatGebnaRoumy)"
   description:  "SPI-controlled PWM peripheral for Tiny Tapeout."
   language:     "Verilog" # other examples include SystemVerilog, Amaranth, VHDL, etc
-  clock_hz:     0       # Clock frequency in Hz (or 0 if not applicable)
+  clock_hz:     10000000 # Clock frequency in Hz (or 0 if not applicable)
 
   # How many tiles your design occupies? A single tile is about 167x108 uM.
   tiles: "1x1"          # Valid values: 1x1, 1x2, 2x2, 3x2, 4x2, 6x2 or 8x2
@@ -19,14 +19,15 @@ project:
   source_files:
     - "project.v"
     - "pwm_peripheral.v"
+    - "spi_peripheral.v"
 
 # The pinout of your project. Leave unused pins blank. DO NOT delete or add any pins.
 # This section is for the datasheet/website. Use descriptive names (e.g., RX, TX, MOSI, SCL, SEG_A, etc.).
 pinout:
   # Inputs
   ui[0]: "SCLK"
-  ui[1]: "nCS"
-  ui[2]: "COPI"
+  ui[1]: "COPI"
+  ui[2]: "nCS"
   ui[3]: ""
   ui[4]: ""
   ui[5]: ""
@@ -45,7 +46,7 @@ pinout:
 
   # Bidirectional pins
   uio[0]: "OUT_8"
-  uio[1]: "OUT_9
+  uio[1]: "OUT_9"
   uio[2]: "OUT_A"
   uio[3]: "OUT_B"
   uio[4]: "OUT_C"
