@@ -4,10 +4,7 @@
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge
-from cocotb.triggers import Edge
 from cocotb.triggers import ClockCycles
-from cocotb.triggers import Timer
-from cocotb.triggers import First
 from cocotb.types import Logic
 from cocotb.types import LogicArray
 from cocotb.utils import get_sim_time
@@ -108,31 +105,29 @@ async def configure_pwm(dut, duty_cycle, out_mask=0x01, pwm_mask=0x01):
 async def wait_for_bit_edge(dut, signal, bit, rising, timeout_ns):
     """Wait for a single bit of a (possibly multi-bit) signal to transition.
 
-    Icarus Verilog's VPI can't register a value-change callback on a bit
-    slice of a vector directly (RisingEdge/FallingEdge on e.g. uo_out[0]
-    raises "cannot callback values on type code=37"). Instead, watch the
-    whole bus for any change and check in Python whether our bit made the
-    transition we're waiting for.
+    Icarus Verilog's VPI can't watch a single bit of a multi-bit signal
+    directly (RisingEdge/FallingEdge on e.g. uo_out[0] raises "cannot
+    callback values on type code=37"), so instead we just check the bit's
+    value once per clock cycle and see if it changed the way we want.
 
     Returns the sim time (ns) the edge happened, or None on timeout.
     """
     mask = 1 << bit
     prev = 1 if (int(signal.value) & mask) else 0
-    deadline = get_sim_time(units="ns") + timeout_ns
+    start_time = get_sim_time(units="ns")
 
-    while True:
-        remaining = deadline - get_sim_time(units="ns")
-        if remaining <= 0:
-            return None
-        trigger = await First(Edge(signal), Timer(remaining, units="ns"))
-        if isinstance(trigger, Timer):
-            return None
+    while (get_sim_time(units="ns") - start_time) < timeout_ns:
+        await ClockCycles(dut.clk, 1)
         cur = 1 if (int(signal.value) & mask) else 0
+
         if rising and prev == 0 and cur == 1:
             return get_sim_time(units="ns")
         if not rising and prev == 1 and cur == 0:
             return get_sim_time(units="ns")
+
         prev = cur
+
+    return None
 
 
 async def measure_pwm(dut, bit=0):
