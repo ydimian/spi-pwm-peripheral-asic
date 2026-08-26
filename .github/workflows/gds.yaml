@@ -17,6 +17,11 @@ jobs:
         uses: TinyTapeout/tt-gds-action@tt10
         with:
           flow: openlane2
+        env:
+          # Authenticate PDK downloads (volare) against the GitHub API so
+          # they use the much higher authenticated rate limit instead of
+          # the shared 60/hour unauthenticated one.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   precheck:
     needs: gds
@@ -24,6 +29,8 @@ jobs:
     steps:
       - name: Run Tiny Tapeout Precheck
         uses: TinyTapeout/tt-gds-action/precheck@tt10
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   gl_test:
     needs: gds
@@ -36,6 +43,8 @@ jobs:
 
       - name: GL test
         uses: TinyTapeout/tt-gds-action/gl_test@tt10
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   viewer:
     needs: gds
