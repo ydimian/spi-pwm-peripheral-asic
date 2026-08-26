@@ -33,29 +33,16 @@ module spi_peripheral (
     reg [15:0] shift_reg;
     reg [4:0]  bit_count;
 
-    // Decoded fields
-    wire write_bit;
-    wire [6:0] address;
-    wire [7:0] data;
-
-    assign write_bit = shift_reg[15];
-    assign address   = shift_reg[14:8];
-    assign data      = shift_reg[7:0];
-
     // Edge detection
     wire ncs_falling_edge;
+    wire ncs_rising_edge;
     wire ncs_high;
     wire sclk_rising_edge;
 
     assign ncs_falling_edge = (ncs_prev == 1'b1) && (ncs_sync_1 == 1'b0);
+    assign ncs_rising_edge  = (ncs_prev == 1'b0) && (ncs_sync_1 == 1'b1);
     assign ncs_high         = (ncs_sync_1 == 1'b1);
     assign sclk_rising_edge = (sclk_prev == 1'b0) && (sclk_sync_1 == 1'b1);
-
-    // Shift register value after sampling the current COPI bit; computed
-    // once here since Icarus Verilog rejects bit-selecting a concatenation
-    // expression directly (e.g. {a, b}[7:0]).
-    wire [15:0] next_shift_reg;
-    assign next_shift_reg = {shift_reg[14:0], copi_sync_1};
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -107,27 +94,28 @@ module spi_peripheral (
 
             // If nCS is low and SCLK rises, sample one COPI bit
             else if (sclk_rising_edge) begin
-                shift_reg <= next_shift_reg;
+                shift_reg <= {shift_reg[14:0], copi_sync_1};
 
-                if (bit_count == 5'd15) begin
-                    bit_count <= 5'd0;
-
-                    // Decode using the completed 16-bit packet
-                    // Important: include the newest COPI bit manually.
-                    if (next_shift_reg[15] == 1'b1) begin
-                        case (next_shift_reg[14:8])
-                            7'h00: en_reg_out_7_0  <= next_shift_reg[7:0];
-                            7'h01: en_reg_out_15_8 <= next_shift_reg[7:0];
-                            7'h02: en_reg_pwm_7_0  <= next_shift_reg[7:0];
-                            7'h03: en_reg_pwm_15_8 <= next_shift_reg[7:0];
-                            7'h04: pwm_duty_cycle  <= next_shift_reg[7:0];
-                            default: begin
-                                // Invalid address: ignore
-                            end
-                        endcase
-                    end
-                end else begin
+                if (bit_count != 5'd16) begin
                     bit_count <= bit_count + 5'd1;
+                end
+            end
+
+            // When nCS rises, the transaction is done. shift_reg already
+            // holds the full 16-bit packet from the last SCLK edge, so
+            // decode and commit the register write here.
+            if (ncs_rising_edge && bit_count == 5'd16) begin
+                if (shift_reg[15] == 1'b1) begin
+                    case (shift_reg[14:8])
+                        7'h00: en_reg_out_7_0  <= shift_reg[7:0];
+                        7'h01: en_reg_out_15_8 <= shift_reg[7:0];
+                        7'h02: en_reg_pwm_7_0  <= shift_reg[7:0];
+                        7'h03: en_reg_pwm_15_8 <= shift_reg[7:0];
+                        7'h04: pwm_duty_cycle  <= shift_reg[7:0];
+                        default: begin
+                            // Invalid address: ignore
+                        end
+                    endcase
                 end
             end
         end
