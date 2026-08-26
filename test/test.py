@@ -10,7 +10,9 @@ from cocotb.types import LogicArray
 from cocotb.utils import get_sim_time
 
 # One PWM period is (12+1)*256 clk cycles @ 100 ns/cycle ~= 332.8 us.
-# Give the edge-wait a healthy margin above that before declaring the
+PWM_PERIOD_CYCLES = 13 * 256
+
+# Give the edge-wait a healthy margin above one period before declaring the
 # signal "stuck" (used to detect the 0%/100% duty cycle edge cases,
 # where no edge will ever occur).
 PWM_TIMEOUT_NS = 400_000
@@ -261,15 +263,20 @@ async def test_pwm_duty(dut):
     dut._log.info("Start PWM Duty Cycle test")
     await reset_dut(dut)
 
-    # 0% duty cycle: output should stay low.
+    # 0% duty cycle: output should stay low for a full period, not just at
+    # a single instant.
     await configure_pwm(dut, duty_cycle=0x00)
     await ClockCycles(dut.clk, 100)
-    assert dut.uo_out[0].value == 0
+    for _ in range(PWM_PERIOD_CYCLES):
+        await ClockCycles(dut.clk, 1)
+        assert dut.uo_out[0].value == 0
 
-    # 100% duty cycle: output should stay high.
+    # 100% duty cycle: output should stay high for a full period.
     await send_spi_transaction(dut, 1, 0x04, 0xFF)
     await ClockCycles(dut.clk, 100)
-    assert dut.uo_out[0].value == 1
+    for _ in range(PWM_PERIOD_CYCLES):
+        await ClockCycles(dut.clk, 1)
+        assert dut.uo_out[0].value == 1
 
     # 50% duty cycle: should measure ~50% high time.
     await send_spi_transaction(dut, 1, 0x04, 0x80)
